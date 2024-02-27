@@ -6,17 +6,24 @@ import json
 import re
 from flask_mail import *
 from .extensions import mail
+import logging
+
+# Setup logging configuration
+logging.basicConfig(filename='error.log', level=logging.ERROR)
 
 routes_blueprint = Blueprint('routes', __name__)
 
-@routes_blueprint.route('/')
-def home():
-    return render_template('index.html')
 
 @routes_blueprint.route('/protected')
 @login_required
 def protected():
     return 'This is a protected route.'
+
+@routes_blueprint.route('/')
+@login_required
+def home():
+    return render_template('index.html')
+
 
 @routes_blueprint.route('/login', methods=['GET', 'POST'])
 def login():
@@ -76,9 +83,12 @@ def logout():
     flash('Logout successful!', 'success')
     return redirect(url_for('routes.login'))
 
+
 @routes_blueprint.route('/hr')
 def index():
     return render_template('hr.html')
+
+
 
 def send_emails(emails):
     responses = []
@@ -118,60 +128,82 @@ def send_emails_route():
 
 @routes_blueprint.route('/save_hr_input_and_generate_questions', methods=['POST'])
 def save_hr_input_and_generate_questions():
-    data = request.json
+    try:
+        # Retrieve HR input data from the form
+        job_description = request.form.get('jobDescription')
+        key_skills = request.form.get('keySkills')
+        job_role = request.form.get('jobRole')
+        required_experience = request.form.get('requiredExperience')
 
-    job_description = data.get('jobDescription')
-    key_skills = data.get('keySkills')
-    job_role = data.get('jobRole')
-    required_experience = data.get('requiredExperience')
+        # Save HR input to the database (you may need to adjust this part based on your database model)
+        new_hr_input = HRInput(
+            job_description=job_description,
+            key_skills=key_skills,
+            job_role=job_role,
+            required_experience=required_experience
+        )
 
-    new_hr_input = HRInput(
-        job_description=job_description,
-        key_skills=key_skills,
-        job_role=job_role,
-        required_experience=required_experience
-    )
-
-    db.session.add(new_hr_input)
-    db.session.commit()
-
-    generated_questions = generate_hr_questions(job_role)
-
-    for question_content in extract_questions(generated_questions):
-        new_question = Question(content=question_content, job_role=job_role)
-        db.session.add(new_question)
+        db.session.add(new_hr_input)
         db.session.commit()
 
-    return jsonify({'message': 'HR inputs and questions saved successfully'})
+        # Generate questions based on the job role
+        generated_questions = generate_hr_questions(job_role)
+        # print(generated_questions)
+
+        # Process and save the generated questions to the database (adjust based on your database model)
+        for question_content in extract_questions(generated_questions):
+            new_question = Question(content=question_content, job_role=job_role)
+            db.session.add(new_question)
+            db.session.commit()
+
+        # Return a response (you may customize this part based on your needs)
+        return 'HR input and questions saved successfully'
+
+    except Exception as e:
+        logging.error(f"Error in 'save_hr_input_and_generate_questions' route: {str(e)}")
+        return render_template('error.html', error='An unexpected error occurred'), 500
+
 
 def generate_hr_questions(role):
-    test_message = [
-        {"role": "system", "content": "HR Interview Bot generates role-specific questions."},
-        {"role": "user", "content": f"Generate questions for {role} role assume you are HR"}
-    ]
+    try:
+        test_message = [
+            {"role": "system", "content": "HR Interview Bot generates role-specific questions."},
+            {"role": "user", "content": f"Generate questions for {role} role assume you are HR"}
+        ]
 
-    complete = openai.ChatCompletion.create(
-        model="ft:gpt-3.5-turbo-0613:funnelhq::8XO5lEhK",
-        temperature=1,
-        max_tokens=300,
-        messages=test_message
-    )
+        complete = openai.ChatCompletion.create(
+            model="ft:gpt-3.5-turbo-0613:funnelhq::8XO5lEhK",
+            temperature=1,
+            max_tokens=300,
+            messages=test_message
+        )
 
-    return complete['choices'][0]['message']['content']
+        return complete['choices'][0]['text']
+    except Exception as e:
+        logging.error(f"Error in 'generate_hr_questions': {str(e)}")
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 def extract_questions(generated_questions):
-    return [q.strip() for q in re.split(r'\n\s*\d+\.\s*', generated_questions) if q.strip()]
+    try:
+        return [q.strip() for q in re.split(r'\n\s*\d+\.\s*', generated_questions) if q.strip()]
+    except Exception as e:
+        logging.error(f"Error in 'extract_questions': {str(e)}")
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 @routes_blueprint.route('/save_questions/<job_role>', methods=['POST'])
 def save_questions(job_role):
-    generated_questions = generate_hr_questions(job_role)
+    try:
+        generated_questions = generate_hr_questions(job_role)
 
-    for question_content in extract_questions(generated_questions):
-        new_question = Question(content=question_content, job_role=job_role)
-        db.session.add(new_question)
-        db.session.commit()
+        for question_content in extract_questions(generated_questions):
+            new_question = Question(content=question_content, job_role=job_role)
+            db.session.add(new_question)
+            db.session.commit()
 
-    return jsonify({'message': f'Questions for {job_role} role saved successfully'})
+        return jsonify({'message': f'Questions for {job_role} role saved successfully'})
+    except Exception as e:
+        logging.exception("An error occurred in 'save_questions' route: %s", str(e))
+        return jsonify({'error': 'An unexpected error occurred'}), 500
 
 @routes_blueprint.route('/get_question/<job_role>', methods=['GET'])
 def get_question(job_role):
@@ -241,10 +273,8 @@ def find_best_fit_candidates(job_role):
 
     if not hr_input:
         return jsonify({'error': 'No HR input found for this role'}), 404
-
     key_skills = hr_input.key_skills
     years_experience = hr_input.required_experience
-
     user_message = {
         "job_title": job_role,
         "key_skills": key_skills,
@@ -256,21 +286,28 @@ def find_best_fit_candidates(job_role):
     ).all()
 
     assistant_message = {
-        "candidates": [
-            {
-                "candidate_id": response.candidate_id,
-                "question": response.question.content,
-                "response": response.response
-            }
-            for response in candidate_responses
-        ]
-    }
+            "candidates": [
+                {
+                    "candidate_id": response.candidate_id,
+                    "question": response.question.content,
+                    "response": response.response
+                }
+                for response in candidate_responses
+            ]
+        }
 
     data = [
-        {"role": "system", "content": system_message},
-        {"role": "user", "content": json.dumps(user_message)},
-        {"role": "assistant", "content": json.dumps(assistant_message)}
-    ]
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": json.dumps(user_message)},
+            {"role": "assistant", "content": json.dumps(assistant_message)}
+        ]
+
+    model_response = openai.ChatCompletion.create(
+            model="ft:gpt-3.5-turbo-0613:funnelhq::8c5QTXcf",
+            messages=data,
+            temperature=1,
+            max_tokens=2000
+        )
 
     model_response = openai.ChatCompletion.create(
         model="ft:gpt-3.5-turbo-0613:funnelhq::8psZjis3",
