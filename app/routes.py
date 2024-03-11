@@ -21,14 +21,12 @@ def start_interview():
         return redirect(url_for('login'))
 
     job_role = current_user.applied_job_role
-
     first_question = Question.query.filter_by(job_role=job_role, id=1).first()
-
     if not first_question:
         flash('No questions available for this job role', 'danger')
         return redirect(url_for('index'))
 
-    return render_template('index.html', question=first_question, id=1)
+    return render_template('index.html', question=first_question.content, id=1)
 
 @routes_blueprint.route('/submit_answer', methods=['POST'])
 @login_required

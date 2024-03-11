@@ -10,12 +10,12 @@
 </head>
 
 <body>
-<div class="nav">
+  <div class="nav">
     <h1 class="nav_title"><a class="nav_title_prefix" href="/">Funnel<span class="title_text">HQ</span></a></h1>
     <div class="nav_right">
         <a href="{{ url_for('routes.logout') }}"><button class="btn">Logout</button></a>
         <a href="/profile/{{ current_user.id }}">
-            {% if current_user.profile_picture_filename and user.profile_picture_filename|length > 10 %}
+            {% if current_user.profile_picture_filename and current_user.profile_picture_filename|length > 10 %}
                 <img class="nav_img" src="../static/{{ current_user.profile_picture_filename }}" alt="">
             {% else %}
                 <img class="nav_img"
@@ -26,7 +26,6 @@
 </div>
 
 <div class="home">
-
     {% if current_user.is_authenticated %}
     <div class="d_title">
         <h1>Candidate <span class="interview_text">Interview</span></h1>
@@ -42,15 +41,21 @@
     <a href="{{ url_for('routes.start_interview') }}"><button class="role_input_btn">Start Interview</button></a>
 
     <div class="q_down">
-        <h2 class="showcase_title">Question Showcase</h2>
-        <div class="q_container" id="questionContainer">
-            <p class="q_text" id="question"></p>
-            <textarea class="response_textarea" id="response" placeholder="Your response..."></textarea>
-            <button class="role_input_btn" id="nextQuestion">Next Question</button>
-        </div>
-    </div>
+      <h2 class="showcase_title">Question Showcase</h2>
+      <div class="q_container" id="questionContainer">
+          {% if question %}
+              <p class="q_text" id="question">{{ question }}</p>
+              <textarea class="response_textarea" id="response" placeholder="Your response..."></textarea>
+              <button class="role_input_btn" id="nextQuestion">Next Question</button>
+          {% else %}
+              <p>No questions available.</p>
+          {% endif %}
+      </div>
+  </div>
 
-    <button class="role_input_btn" id="startSpeech">Start Speaking</button>
+    {% if question %}
+      <button class="role_input_btn" id="startSpeech">Start Speaking</button>
+    {% endif %}
 
     {% else %}
     <p>Please <a href="{{ url_for('routes.login') }}">log in</a> to access this page.</p>
