@@ -13,6 +13,75 @@ routes_blueprint = Blueprint('routes', __name__)
 def home():
     return render_template('index.html')
 
+
+@routes_blueprint.route('/start_interview', methods=['GET'])
+@login_required
+def start_interview():
+    if not current_user.is_authenticated:
+        return redirect(url_for('login'))
+
+    job_role = current_user.applied_job_role
+    first_question = Question.query.filter_by(job_role=job_role, id=1).first()
+    if not first_question:
+        flash('No questions available for this job role', 'danger')
+        return redirect(url_for('index'))
+
+    return render_template('index.html', question=first_question.content, id=1)
+
+@routes_blueprint.route('/submit_answer', methods=['POST'])
+@login_required
+def submit_answer():
+    if not current_user.is_authenticated:
+        return redirect(url_for('login'))
+
+    candidate_name = current_user.name
+    id = int(request.form['id'])
+    response = request.form['response']
+
+    # Get or create the candidate
+    candidate = Candidate.query.filter_by(name=candidate_name).first()
+    if not candidate:
+        candidate = Candidate(name=candidate_name, email=current_user.email)
+        db.session.add(candidate)
+        db.session.commit()
+
+    question = Question.query.filter_by(job_role=current_user.applied_job_role, id=id).first()
+
+    if not question:
+        flash('Question not found', 'danger')
+        return redirect(url_for('index'))
+
+    existing_response = CandidateResponse.query.filter_by(candidate_id=candidate.id, id=id).first()
+    if existing_response:
+        flash('Response already exists for this candidate and question', 'warning')
+        return redirect(url_for('index'))
+
+    new_response = CandidateResponse(
+        candidate_id=candidate.id,
+        id=id,
+        response=response
+    )
+
+    db.session.add(new_response)
+    db.session.commit()
+
+    next_question_id = id + 1
+    return redirect(url_for('fetch_question', id=next_question_id))
+
+@routes_blueprint.route('/fetch_question/<int:question_id>', methods=['GET'])
+@login_required
+def fetch_question(question_id):
+    if not current_user.is_authenticated:
+        return redirect(url_for('login'))
+
+    question = Question.query.filter_by(job_role=current_user.applied_job_role, question_id=question_id).first()
+
+    if not question:
+        flash('No more questions available for this job role', 'info')
+        return redirect(url_for('index'))
+
+    return render_template('index.html', question=question, question_id=question_id)
+
 @routes_blueprint.route('/protected')
 @login_required
 def protected():
